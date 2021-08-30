@@ -6,22 +6,40 @@ import (
 )
 
 func Merge(dst interface{}, src map[string]interface{}) (err error) {
-	var processing_field string
+	var processingField string
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("%s has wrong value type: %s", processing_field, r)
+			err = fmt.Errorf("%s has wrong value type: %s", processingField, r)
 		}
 	}()
-	dst_value := reflect.ValueOf(dst)
-	dst_type := dst_value.Elem().Type()
-	for i := 0; i < dst_type.NumField(); i++ {
-		type_field := dst_type.Field(i)
-		value_field := dst_value.Elem().Field(i)
-		json_tag := type_field.Tag.Get("json")
-		processing_field = json_tag
-		if value, ok := src[json_tag]; ok {
-			converted_value := reflect.ValueOf(value).Convert(type_field.Type)
-			value_field.Set(converted_value)
+	dstValue := reflect.ValueOf(dst)
+	dstType := dstValue.Elem().Type()
+	for i := 0; i < dstType.NumField(); i++ {
+		typeField := dstType.Field(i)
+		valueField := dstValue.Elem().Field(i)
+		jsonTag := ParseJsonTag(typeField.Tag.Get("json"))
+		inline := (typeField.Anonymous && len(jsonTag.Name) == 0) || jsonTag.Inline
+		name := jsonTag.Name
+		if len(name) == 0 {
+			name = typeField.Name
+		}
+		processingField = name
+		var value interface{}
+		var ok bool
+		if !inline {
+			value, ok = src[jsonTag.Name]
+		} else {
+			value, ok = src, true
+		}
+		if ok {
+			if valueField.Kind() == reflect.Struct {
+				if err = Merge(valueField.Addr().Interface(), value.(map[string]interface{})); err != nil {
+					return
+				}
+			} else {
+				convertedValue := reflect.ValueOf(value).Convert(typeField.Type)
+				valueField.Set(convertedValue)
+			}
 		}
 	}
 	return
